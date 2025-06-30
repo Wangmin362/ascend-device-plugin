@@ -128,6 +128,7 @@ func main() {
 	if err != nil {
 		klog.Fatalf("init AscendManager failed, error is %v", err)
 	}
+	// 通过驱动获取当前节点芯片的配置信息，通过芯片的名字找到当前芯片的配置，并对当前芯片的虚拟化模板按照从小到大的顺序排序
 	err = mgr.LoadConfig(*configFile)
 	if err != nil {
 		klog.Fatalf("load config failed, error is %v", err)

@@ -75,14 +75,17 @@ func NewPluginServer(mgr *manager.AscendManager, nodeName string) (*PluginServer
 
 func (ps *PluginServer) Start() error {
 	ps.stopCh = make(chan interface{})
+	// 通过查询驱动获取当前节点所有芯片的信息，包括物理ID、逻辑ID、UUID、内存、AI核心，健康状态等信息
 	err := ps.mgr.UpdateDevice()
 	if err != nil {
 		return err
 	}
+	// 启动DP，并等待DP启动成功
 	err = ps.serve()
 	if err != nil {
 		return err
 	}
+	// 注册kubelet
 	err = ps.registerKubelet()
 	if err != nil {
 		return err
@@ -188,7 +191,9 @@ func (ps *PluginServer) registerKubelet() error {
 	return nil
 }
 
+// 所谓注册HAMI其实就是给节点打上hami相关的注解
 func (ps *PluginServer) registerHAMi() error {
+	// 获取所有的设备
 	devs := ps.mgr.GetDevices()
 	apiDevices := make([]*util.DeviceInfo, 0, len(devs))
 	// hami currently believes that the index starts from 0 and is continuous.
@@ -237,6 +242,7 @@ func (ps *PluginServer) watchAndRegister() {
 			}
 			ps.healthCh <- unhealthy[0]
 		}
+		// 所谓注册HAMI其实就是给节点打上hami相关的注解
 		err := ps.registerHAMi()
 		if err != nil {
 			klog.Errorf("register HAMi error: %v", err)
@@ -264,6 +270,7 @@ func (ps *PluginServer) parsePodAnnotation(pod *v1.Pod) ([]int32, []string, erro
 		if info.UUID == "" {
 			continue
 		}
+		// 通过UUID找到对应的昇腾设备
 		d := ps.mgr.GetDeviceByUUID(info.UUID)
 		if d == nil {
 			return nil, nil, fmt.Errorf("unknown uuid: %s", info.UUID)
@@ -320,9 +327,11 @@ func (ps *PluginServer) GetPreferredAllocation(context.Context, *v1beta1.Preferr
 
 func (ps *PluginServer) Allocate(ctx context.Context, reqs *v1beta1.AllocateRequest) (*v1beta1.AllocateResponse, error) {
 	klog.V(5).Infof("Allocate: %v", reqs)
+	// 获取当前节点处于Pending的Pod
 	pod, err := util.GetPendingPod(ctx, ps.nodeName)
 	if err != nil {
 		klog.Errorf("get pending pod error: %v", err)
+		// 分配失败，直接释放锁
 		lockerr := nodelock.ReleaseNodeLock(ps.nodeName, NodeLockAscend, pod, false)
 		if lockerr != nil {
 			klog.Errorf("failed to release lock:%s", err.Error())
@@ -330,6 +339,7 @@ func (ps *PluginServer) Allocate(ctx context.Context, reqs *v1beta1.AllocateRequ
 		return nil, fmt.Errorf("get pending pod error: %v", err)
 	}
 	resp := v1beta1.ContainerAllocateResponse{}
+	// 获取hami为当前Pod分配的设备ID
 	IDs, temps, err := ps.parsePodAnnotation(pod)
 	if err != nil {
 		lockerr := nodelock.ReleaseNodeLock(ps.nodeName, NodeLockAscend, pod, false)

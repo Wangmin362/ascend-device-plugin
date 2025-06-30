@@ -45,6 +45,7 @@ type AscendManager struct {
 }
 
 func NewAscendManager() (*AscendManager, error) {
+	// 初始化驱动库，通过DCMI接口调用底层驱动
 	mgr, err := devmanager.AutoInit("")
 	if err != nil {
 		return nil, err
@@ -55,11 +56,13 @@ func NewAscendManager() (*AscendManager, error) {
 	}, nil
 }
 
+// LoadConfig 通过驱动获取当前节点芯片的配置信息，通过芯片的名字找到当前芯片的配置，并对当前芯片的虚拟化模板按照从小到大的顺序排序
 func (am *AscendManager) LoadConfig(path string) error {
 	config, err := internal.LoadConfig(path)
 	if err != nil {
 		return err
 	}
+	// 通过驱动获取芯片信息
 	chipInfo, err := am.mgr.GetValidChipInfo()
 	if err != nil {
 		return err
@@ -68,6 +71,7 @@ func (am *AscendManager) LoadConfig(path string) error {
 		return fmt.Errorf("chip type is not Ascend")
 	}
 	idx := -1
+	// 找到当前芯片的配置索引
 	for i, vnpu := range config.VNPUs {
 		if vnpu.ChipName == chipInfo.Name {
 			idx = i
@@ -77,7 +81,9 @@ func (am *AscendManager) LoadConfig(path string) error {
 	if idx == -1 {
 		return fmt.Errorf("can not find vnpu config for chip %s", chipInfo.Name)
 	}
+	// 获取配置
 	am.config = config.VNPUs[idx]
+	// 显存按照从小到大排序，方便后续找到合适的显存模板
 	sort.Slice(am.config.Templates, func(i, j int) bool {
 		return am.config.Templates[i].Memory < am.config.Templates[j].Memory
 	})
@@ -100,7 +106,9 @@ func (am *AscendManager) VDeviceCount() int {
 	return int(am.config.MemoryAllocatable / am.config.Templates[0].Memory)
 }
 
+// UpdateDevice 通过查询驱动获取当前节点所有芯片的信息，包括物理ID、逻辑ID、UUID、内存、AI核心，健康状态等信息
 func (am *AscendManager) UpdateDevice() error {
+	// 获取当前节点所有芯片的ID
 	_, IDs, err := am.mgr.GetDeviceList()
 	if err != nil {
 		klog.Errorf("failed to get device list: %v", err)
