@@ -33,6 +33,148 @@ import (
 	"k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
 )
 
+/* config-file配置文件如下
+apiVersion: v1
+data:
+  ascend-config.yaml: |-
+    vnpus:
+    - chipName: 910B
+      commonWord: Ascend910A
+      resourceName: huawei.com/Ascend910A
+      resourceMemoryName: huawei.com/Ascend910A-memory
+      memoryAllocatable: 32768
+      memoryCapacity: 32768
+      aiCore: 30
+      templates:
+        - name: vir02
+          memory: 2184
+          aiCore: 2
+        - name: vir04
+          memory: 4369
+          aiCore: 4
+        - name: vir08
+          memory: 8738
+          aiCore: 8
+        - name: vir16
+          memory: 17476
+          aiCore: 16
+    - chipName: 910B2
+      commonWord: Ascend910B2
+      resourceName: huawei.com/Ascend910B2
+      resourceMemoryName: huawei.com/Ascend910B2-memory
+      memoryAllocatable: 65536
+      memoryCapacity: 65536
+      aiCore: 24
+      aiCPU: 6
+      topologyPairs:
+        - 1,2,3,4,5,6,7
+        - 0,2,3,4,5,6,7
+        - 0,1,3,4,5,6,7
+        - 0,1,2,4,5,6,7
+        - 0,1,2,3,5,6,7
+        - 0,1,2,3,4,6,7
+        - 0,1,2,3,4,5,7
+        - 0,1,2,3,4,5,6
+      templates:
+        - name: vir03_1c_8g
+          memory: 8192
+          aiCore: 3
+          aiCPU: 1
+        - name: vir06_1c_16g
+          memory: 16384
+          aiCore: 6
+          aiCPU: 1
+        - name: vir12_3c_32g
+          memory: 32768
+          aiCore: 12
+          aiCPU: 3
+    - chipName: 910B3
+      commonWord: Ascend910B
+      resourceName: huawei.com/Ascend910B
+      resourceMemoryName: huawei.com/Ascend910B-memory
+      memoryAllocatable: 65536
+      memoryCapacity: 65536
+      aiCore: 20
+      aiCPU: 7
+      topologyPairs:
+        - 1,2,3,4,5,6,7
+        - 0,2,3,4,5,6,7
+        - 0,1,3,4,5,6,7
+        - 0,1,2,4,5,6,7
+        - 0,1,2,3,5,6,7
+        - 0,1,2,3,4,6,7
+        - 0,1,2,3,4,5,7
+        - 0,1,2,3,4,5,6
+      templates:
+        - name: vir05_1c_16g
+          memory: 16384
+          aiCore: 5
+          aiCPU: 1
+        - name: vir10_3c_32g
+          memory: 32768
+          aiCore: 10
+          aiCPU: 3
+    - chipName: 910B4
+      commonWord: Ascend910B4
+      resourceName: huawei.com/Ascend910B4
+      resourceMemoryName: huawei.com/Ascend910B4-memory
+      memoryAllocatable: 32768
+      memoryCapacity: 32768
+      aiCore: 20
+      aiCPU: 7
+      templates:
+        - name: vir05_1c_8g
+          memory: 8192
+          aiCore: 5
+          aiCPU: 1
+        - name: vir10_3c_16g
+          memory: 16384
+          aiCore: 10
+          aiCPU: 3
+    - chipName: 910B4-1
+      commonWord: Ascend910B4
+      resourceName: huawei.com/Ascend910B4
+      resourceMemoryName: huawei.com/Ascend910B4-memory
+      memoryAllocatable: 65536
+      memoryCapacity: 65536
+      aiCore: 20
+      aiCPU: 7
+      templates:
+        - name: vir05_1c_8g
+          memory: 8192
+          aiCore: 5
+          aiCPU: 1
+        - name: vir10_3c_16g
+          memory: 16384
+          aiCore: 10
+          aiCPU: 3
+    - chipName: 310P3
+      commonWord: Ascend310P
+      resourceName: huawei.com/Ascend310P
+      resourceMemoryName: huawei.com/Ascend310P-memory
+      memoryAllocatable: 21527
+      memoryCapacity: 24576
+      aiCore: 8
+      aiCPU: 7
+      templates:
+        - name: vir01
+          memory: 3072
+          aiCore: 1
+          aiCPU: 1
+        - name: vir02
+          memory: 6144
+          aiCore: 2
+          aiCPU: 2
+        - name: vir04
+          memory: 12288
+          aiCore: 4
+          aiCPU: 4
+kind: ConfigMap
+metadata:
+  name: hami-device-plugin-ascend
+  namespace: rise-vast-system
+*/
+
 var (
 	hwLoglevel = flag.Int("hw_loglevel", 0, "huawei log level, -1-debug, 0-info, 1-warning, 2-error 3-critical default value: 0")
 	configFile = flag.String("config_file", "", "config file path")
@@ -51,6 +193,7 @@ func checkFlags() {
 
 func start(ps *server.PluginServer) error {
 	klog.Info("Starting FS watcher.")
+	// 监听/var/lib/kubelet/device-plugins目录，当kubelet重启时，会重新创建该目录
 	watcher, err := internal.NewFSWatcher(v1beta1.DevicePluginPath)
 	if err != nil {
 		return fmt.Errorf("failed to create FS watcher: %v", err)
@@ -115,6 +258,7 @@ func main() {
 	flag.Parse()
 	checkFlags()
 	klog.Infof("version: %s", version.GetVersion())
+	// TODO 这里最好把这个配置文件打印出来，方便定位问题
 	klog.Infof("using config file: %s", *configFile)
 	config := &hwlog.LogConfig{
 		OnlyToStdout: true,
@@ -124,6 +268,7 @@ func main() {
 	if err != nil {
 		klog.Fatalf("init huawei run logger failed, %v", err)
 	}
+	// 这里的AscendManager本质上其实就是昇腾DeviceManager的封装, 拥有DCMI接口，因此可以调用底层驱动获取芯片信息
 	mgr, err := manager.NewAscendManager()
 	if err != nil {
 		klog.Fatalf("init AscendManager failed, error is %v", err)

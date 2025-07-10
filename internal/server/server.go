@@ -48,16 +48,29 @@ var (
 )
 
 type PluginServer struct {
-	nodeName      string
-	registerAnno  string
-	handshakeAnno string
-	allocAnno     string
+	nodeName      string // 当前所在的节点名
+	registerAnno  string // 注册到节点上的设备，volcano从这个注解上获取设备信息
+	handshakeAnno string // 握手信息
+	allocAnno     string // 给Pod分配设备之后，使用的注解
 	grpcServer    *grpc.Server
 	mgr           *manager.AscendManager
 	socket        string
 	stopCh        chan interface{}
 	healthCh      chan int32
 }
+
+/*
+	hami.io/node-handshake-Ascend910B: Requesting_2025-07-10 07:48:33
+    hami.io/node-register-Ascend910B: '[
+{"id":"Ascend910B-0","count":4,"devmem":65536,"devcore":20,"type":"Ascend910B","health":true},
+{"index":1,"id":"Ascend910B-1","count":4,"devmem":65536,"devcore":20,"type":"Ascend910B","health":true},
+{"index":2,"id":"Ascend910B-2","count":4,"devmem":65536,"devcore":20,"type":"Ascend910B","health":true},
+{"index":3,"id":"Ascend910B-3","count":4,"devmem":65536,"devcore":20,"type":"Ascend910B","health":true},
+{"index":4,"id":"Ascend910B-4","count":4,"devmem":65536,"devcore":20,"type":"Ascend910B","health":true},
+{"index":5,"id":"Ascend910B-5","count":4,"devmem":65536,"devcore":20,"type":"Ascend910B","health":true},
+{"index":6,"id":"Ascend910B-6","count":4,"devmem":65536,"devcore":20,"type":"Ascend910B","health":true},
+{"index":7,"id":"Ascend910B-7","count":4,"devmem":65536,"devcore":20,"type":"Ascend910B","health":true}]'
+*/
 
 func NewPluginServer(mgr *manager.AscendManager, nodeName string) (*PluginServer, error) {
 	return &PluginServer{
@@ -67,9 +80,10 @@ func NewPluginServer(mgr *manager.AscendManager, nodeName string) (*PluginServer
 		allocAnno:     fmt.Sprintf("huawei.com/%s", mgr.CommonWord()),
 		grpcServer:    grpc.NewServer(),
 		mgr:           mgr,
-		socket:        path.Join(v1beta1.DevicePluginPath, fmt.Sprintf("%s.sock", mgr.CommonWord())),
-		stopCh:        make(chan interface{}),
-		healthCh:      make(chan int32),
+		// TODO 这里只上报了一种类型的资源， 为什么不考拉整卡资源和虚卡资源分开上报？
+		socket:   path.Join(v1beta1.DevicePluginPath, fmt.Sprintf("%s.sock", mgr.CommonWord())),
+		stopCh:   make(chan interface{}),
+		healthCh: make(chan int32),
 	}, nil
 }
 
@@ -80,7 +94,8 @@ func (ps *PluginServer) Start() error {
 	if err != nil {
 		return err
 	}
-	// 启动DP，并等待DP启动成功
+	// 1. 启动DP，并等待DP启动成功
+	// 2. 移除之前注册的socket文件，然后重新启动GRPC服务，此时会重新创建socket文件
 	err = ps.serve()
 	if err != nil {
 		return err
@@ -90,6 +105,7 @@ func (ps *PluginServer) Start() error {
 	if err != nil {
 		return err
 	}
+	// 定时获取设备的健康状态，上报到Kubelet。与此同时定期更新节点的注解【设备】信息以及握手信息
 	go ps.watchAndRegister()
 	return nil
 }
@@ -118,19 +134,24 @@ func (ps *PluginServer) dial(unixSocketPath string, timeout time.Duration) (*grp
 	return c, nil
 }
 
+// 移除之前注册的socket文件，然后重新启动GRPC服务，此时会重新创建socket文件
 func (ps *PluginServer) serve() error {
+	// 移除之前的/var/lib/kubelet/device-plugins/Ascend910B.sock文件，因为这里需要重新向kubelet注册
 	_ = os.Remove(ps.socket)
 	sock, err := net.Listen("unix", ps.socket)
 	if err != nil {
 		return err
 	}
+	// 驱动GRPC服务之前，注册GRPC的服务，有点类似于注册路由的感觉
 	v1beta1.RegisterDevicePluginServer(ps.grpcServer, ps)
+	// 获取当前的资源名，譬如huawei.com/Ascend910A， huawei.com/Ascend910B等等
 	resourceName := ps.mgr.ResourceName()
 	go func() {
 		lastCrashTime := time.Now()
 		restartCount := 0
 		for {
 			klog.Infof("Starting GRPC server for '%s'", resourceName)
+			// 启动GRPC服务，GRPC服务，必须要在注册kubelet之前就启动，否则一会kubelet回调ListAndWatch方法的时候,会调用失败
 			err := ps.grpcServer.Serve(sock)
 			if err == nil {
 				break
@@ -157,6 +178,7 @@ func (ps *PluginServer) serve() error {
 	}()
 
 	// Wait for server to start by launching a blocking connexion
+	// 等待GRPC服务启动完成
 	conn, err := ps.dial(ps.socket, 5*time.Second)
 	if err != nil {
 		return err
@@ -201,7 +223,7 @@ func (ps *PluginServer) registerHAMi() error {
 		apiDevices = append(apiDevices, &util.DeviceInfo{
 			Index:   uint(i),
 			ID:      dev.UUID,
-			Count:   int32(ps.mgr.VDeviceCount()),
+			Count:   int32(ps.mgr.VDeviceCount()), // 昇腾的算力切分，本质上就是应用昇腾的模板，因此这里最多可以创建的虚卡数量为可分配内存处于最小模板需要使用的内存大小
 			Devmem:  int32(dev.Memory),
 			Devcore: dev.AICore,
 			Type:    ps.mgr.CommonWord(),
@@ -210,7 +232,9 @@ func (ps *PluginServer) registerHAMi() error {
 		})
 	}
 	annos := make(map[string]string)
+	// 向节点注册设备信息
 	annos[ps.registerAnno] = util.MarshalNodeDevices(apiDevices)
+	// 向节点更新握手信息
 	annos[ps.handshakeAnno] = "Reported_" + time.Now().Add(time.Duration(*reportTimeOffset)*time.Second).Format("2006.01.02 15:04:05")
 	node, err := util.GetNode(ps.nodeName)
 	if err != nil {
@@ -224,6 +248,7 @@ func (ps *PluginServer) registerHAMi() error {
 	return nil
 }
 
+// 定时获取设备的健康状态，上报到Kubelet。与此同时定期更新节点的注解【设备】信息以及握手信息
 func (ps *PluginServer) watchAndRegister() {
 	timer := time.After(1 * time.Second)
 	for {
@@ -242,7 +267,7 @@ func (ps *PluginServer) watchAndRegister() {
 			}
 			ps.healthCh <- unhealthy[0]
 		}
-		// 所谓注册HAMI其实就是给节点打上hami相关的注解
+		// 所谓注册HAMI其实就是给节点打上hami相关的注解，一个是更新节点设备信息，一个是更新握手信息
 		err := ps.registerHAMi()
 		if err != nil {
 			klog.Errorf("register HAMi error: %v", err)
@@ -254,7 +279,9 @@ func (ps *PluginServer) watchAndRegister() {
 	}
 }
 
+// 调度器调度完成之后，会把分配的设备写入到Pod注解中，这里在解析注解信息获取当前Pod分配到的设备以及对应的模板
 func (ps *PluginServer) parsePodAnnotation(pod *v1.Pod) ([]int32, []string, error) {
+	// 从调度其中获取当前分配的卡和模板
 	anno, ok := pod.Annotations[ps.allocAnno]
 	if !ok {
 		return nil, nil, fmt.Errorf("annotation %s not set", "huawei.com/Ascend")
@@ -293,6 +320,8 @@ func (ps *PluginServer) apiDevices() []*v1beta1.Device {
 		if dev.Health {
 			health = v1beta1.Healthy
 		}
+		// TODO 这里会不会有问题，因为一张卡可能不是等分的，有可能是多种规格的组合
+		// TODO 这里的写法类似于TimeSlice的写法， 就是给调度器上报多个资源，这样就可以复用一张卡
 		for i := 0; i < vCount; i++ {
 			device := v1beta1.Device{
 				ID:     fmt.Sprintf("%s-%d", dev.UUID, i),
@@ -316,6 +345,7 @@ func (ps *PluginServer) ListAndWatch(e *v1beta1.Empty, s v1beta1.DevicePlugin_Li
 		case <-ps.stopCh:
 			return nil
 		case <-ps.healthCh:
+			// 当前设备的状态发生了变化，因此通知一下Kubelet
 			_ = s.Send(&v1beta1.ListAndWatchResponse{Devices: ps.apiDevices()})
 		}
 	}
@@ -327,7 +357,7 @@ func (ps *PluginServer) GetPreferredAllocation(context.Context, *v1beta1.Preferr
 
 func (ps *PluginServer) Allocate(ctx context.Context, reqs *v1beta1.AllocateRequest) (*v1beta1.AllocateResponse, error) {
 	klog.V(5).Infof("Allocate: %v", reqs)
-	// 获取当前节点处于Pending的Pod
+	// 通过节点锁获取当前节点处于Pending的Pod，volcano调度之后会给当前节点设置一把锁，锁信息中会包含当前需要分配设备的Pod信息 ns/name
 	pod, err := util.GetPendingPod(ctx, ps.nodeName)
 	if err != nil {
 		klog.Errorf("get pending pod error: %v", err)
@@ -339,7 +369,7 @@ func (ps *PluginServer) Allocate(ctx context.Context, reqs *v1beta1.AllocateRequ
 		return nil, fmt.Errorf("get pending pod error: %v", err)
 	}
 	resp := v1beta1.ContainerAllocateResponse{}
-	// 获取hami为当前Pod分配的设备ID
+	// 调度器调度完成之后，会把分配的设备写入到Pod注解中，这里在解析注解信息获取当前Pod分配到的设备以及对应的模板
 	IDs, temps, err := ps.parsePodAnnotation(pod)
 	if err != nil {
 		lockerr := nodelock.ReleaseNodeLock(ps.nodeName, NodeLockAscend, pod, false)
@@ -357,9 +387,12 @@ func (ps *PluginServer) Allocate(ctx context.Context, reqs *v1beta1.AllocateRequ
 	}
 	ascendVisibleDevices := fmt.Sprintf("%d", IDs[0])
 	ascendVNPUSpec := ""
+	// 本质上是拼接都好，Q: 为啥不直接使用strings.join(IDS, ","), A：因为这里是拼接字符串，而不是拼接数字
 	for i := 1; i < len(IDs); i++ {
 		ascendVisibleDevices = fmt.Sprintf("%s,%d", ascendVisibleDevices, IDs[i])
 	}
+	// 遍历模板，找到第一个模板直接退出
+	// TODO， 实际上，如果只多卡的情况下，昇腾并不支持模板，想使用模板，只能分配一张虚拟卡
 	for i := 0; i < len(temps); i++ {
 		if temps[i] != "" {
 			ascendVNPUSpec = temps[i]

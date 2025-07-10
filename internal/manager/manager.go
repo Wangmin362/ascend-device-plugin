@@ -39,11 +39,13 @@ type Device struct {
 
 type AscendManager struct {
 	mgr *devmanager.DeviceManager
-	//nodeName string
+	//nodeName string  当前节点的配置，这个配置是有用户配置，基本就是我们自己定义的，用户也一般不会更改
 	config internal.VNPUConfig
-	devs   []*Device
+	// 通过调用DCMI底层驱动接口获取设别相关信息，包括物理ID、逻辑ID、UUID、内存、AI核心，健康状态等信息
+	devs []*Device
 }
 
+// NewAscendManager 这里的AscendManager本质上其实就是昇腾DeviceManager的封装, 拥有DCMI接口，因此可以调用底层驱动获取芯片信息
 func NewAscendManager() (*AscendManager, error) {
 	// 初始化驱动库，通过DCMI接口调用底层驱动
 	mgr, err := devmanager.AutoInit("")
@@ -58,6 +60,7 @@ func NewAscendManager() (*AscendManager, error) {
 
 // LoadConfig 通过驱动获取当前节点芯片的配置信息，通过芯片的名字找到当前芯片的配置，并对当前芯片的虚拟化模板按照从小到大的顺序排序
 func (am *AscendManager) LoadConfig(path string) error {
+	// 记录每一种不同类型的芯片的型号，以及资源名，显存大小，AICore, AICpu的大小。以及可以分配的模板
 	config, err := internal.LoadConfig(path)
 	if err != nil {
 		return err
@@ -71,7 +74,7 @@ func (am *AscendManager) LoadConfig(path string) error {
 		return fmt.Errorf("chip type is not Ascend")
 	}
 	idx := -1
-	// 找到当前芯片的配置索引
+	// 找到当前芯片的配置索引，一般来说一台机器只可能插入一种类型的芯片，不可能插入多种类型的芯片，因此这里需要获取当前节点芯片类型的配置索引
 	for i, vnpu := range config.VNPUs {
 		if vnpu.ChipName == chipInfo.Name {
 			idx = i
@@ -84,6 +87,7 @@ func (am *AscendManager) LoadConfig(path string) error {
 	// 获取配置
 	am.config = config.VNPUs[idx]
 	// 显存按照从小到大排序，方便后续找到合适的显存模板
+	// hami的算力切分，本质上就是通过昇腾模板来进行切分的，类似于英伟达的MIG
 	sort.Slice(am.config.Templates, func(i, j int) bool {
 		return am.config.Templates[i].Memory < am.config.Templates[j].Memory
 	})
@@ -103,6 +107,7 @@ func (am *AscendManager) VDeviceCount() int {
 	if len(am.config.Templates) == 0 {
 		return 1
 	}
+	// 昇腾的算力切分，本质上就是应用昇腾的模板，因此这里最多可以创建的虚卡数量为可分配内存处于最小模板需要使用的内存大小
 	return int(am.config.MemoryAllocatable / am.config.Templates[0].Memory)
 }
 
