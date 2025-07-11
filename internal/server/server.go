@@ -391,8 +391,8 @@ func (ps *PluginServer) Allocate(ctx context.Context, reqs *v1beta1.AllocateRequ
 	for i := 1; i < len(IDs); i++ {
 		ascendVisibleDevices = fmt.Sprintf("%s,%d", ascendVisibleDevices, IDs[i])
 	}
-	// 遍历模板，找到第一个模板直接退出
-	// TODO， 实际上，如果只多卡的情况下，昇腾并不支持模板，想使用模板，只能分配一张虚拟卡
+	// 1. 遍历模板，找到第一个模板直接退出
+	// 2. 如果只多卡的情况下，昇腾并不支持模板，想使用模板，只能分配一张虚拟卡，其实hami webhook也会检查这种情况，不要内需申请多张虚拟卡
 	for i := 0; i < len(temps); i++ {
 		if temps[i] != "" {
 			ascendVNPUSpec = temps[i]
