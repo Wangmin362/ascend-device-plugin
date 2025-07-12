@@ -80,7 +80,7 @@ func NewPluginServer(mgr *manager.AscendManager, nodeName string) (*PluginServer
 		allocAnno:     fmt.Sprintf("huawei.com/%s", mgr.CommonWord()),
 		grpcServer:    grpc.NewServer(),
 		mgr:           mgr,
-		// TODO 这里只上报了一种类型的资源， 为什么不考拉整卡资源和虚卡资源分开上报？
+		// TODO 这里只上报了一种类型的资源， 为什么不考虑整卡资源和虚卡资源分开上报？
 		socket:   path.Join(v1beta1.DevicePluginPath, fmt.Sprintf("%s.sock", mgr.CommonWord())),
 		stopCh:   make(chan interface{}),
 		healthCh: make(chan int32),
