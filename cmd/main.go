@@ -37,6 +37,7 @@ var (
 	hwLoglevel = flag.Int("hw_loglevel", 0, "huawei log level, -1-debug, 0-info, 1-warning, 2-error 3-critical default value: 0")
 	configFile = flag.String("config_file", "", "config file path")
 	nodeName   = flag.String("node_name", os.Getenv("NODE_NAME"), "node name")
+	isHAMIMode = flag.Bool("is_hami_mode", true, "whether report device to hami, if true, report device for hami scheduler, else report device for volcano scheduler")
 )
 
 func checkFlags() {
@@ -132,7 +133,7 @@ func main() {
 	if err != nil {
 		klog.Fatalf("load config failed, error is %v", err)
 	}
-	server, err := server.NewPluginServer(mgr, *nodeName)
+	server, err := server.NewPluginServer(mgr, *nodeName, *isHAMIMode)
 	if err != nil {
 		klog.Fatalf("init PluginServer failed, error is %v", err)
 	}

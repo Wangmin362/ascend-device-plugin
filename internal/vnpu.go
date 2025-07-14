@@ -20,6 +20,7 @@ import (
 	"os"
 
 	"k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/klog/v2"
 )
 
 type Template struct {
@@ -50,6 +51,7 @@ func LoadConfig(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	klog.Infof("load %s config: %s", path, string(data))
 	var yamlData Config
 	err = yaml.Unmarshal(data, &yamlData)
 	if err != nil {

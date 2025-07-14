@@ -37,7 +37,7 @@ import (
 	"k8s.io/kubelet/pkg/apis/deviceplugin/v1beta1"
 )
 
-const (
+var (
 	// RegisterAnnos = "hami.io/node-register-ascend"
 	// PodAllocAnno = "huawei.com/AscendDevices"
 	NodeLockAscend = "hami.io/mutex.lock"
@@ -59,12 +59,21 @@ type PluginServer struct {
 	healthCh      chan int32
 }
 
-func NewPluginServer(mgr *manager.AscendManager, nodeName string) (*PluginServer, error) {
+func NewPluginServer(mgr *manager.AscendManager, nodeName string, isHAMIMode bool) (*PluginServer, error) {
+	registerAnno := fmt.Sprintf("hami.io/node-register-%s", mgr.CommonWord())
+	handshakeAnno := fmt.Sprintf("hami.io/node-handshake-%s", mgr.CommonWord())
+	allocAnno := fmt.Sprintf("huawei.com/%s", mgr.CommonWord())
+	if !isHAMIMode {
+		registerAnno = fmt.Sprintf("volcano.sh/node-register-%s", mgr.CommonWord())
+		handshakeAnno = fmt.Sprintf("volcano.sh/node-handshake-%s", mgr.CommonWord())
+		allocAnno = fmt.Sprintf("volcano.sh/node-alloc-%s", mgr.CommonWord())
+		NodeLockAscend = fmt.Sprintf("volcano.sh/ascend.mutex.lock")
+	}
 	return &PluginServer{
 		nodeName:      nodeName,
-		registerAnno:  fmt.Sprintf("hami.io/node-register-%s", mgr.CommonWord()),
-		handshakeAnno: fmt.Sprintf("hami.io/node-handshake-%s", mgr.CommonWord()),
-		allocAnno:     fmt.Sprintf("huawei.com/%s", mgr.CommonWord()),
+		registerAnno:  registerAnno,
+		handshakeAnno: handshakeAnno,
+		allocAnno:     allocAnno,
 		grpcServer:    grpc.NewServer(),
 		mgr:           mgr,
 		socket:        path.Join(v1beta1.DevicePluginPath, fmt.Sprintf("%s.sock", mgr.CommonWord())),
