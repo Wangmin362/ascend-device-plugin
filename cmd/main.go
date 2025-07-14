@@ -134,7 +134,7 @@ func main() {
 	if err != nil {
 		klog.Fatalf("init AscendManager failed, error is %v", err)
 	}
-	err = mgr.LoadConfig(*configFile)
+	err = mgr.LoadConfig(*configFile, *isHAMIMode)
 	if err != nil {
 		klog.Fatalf("load config failed, error is %v", err)
 	}

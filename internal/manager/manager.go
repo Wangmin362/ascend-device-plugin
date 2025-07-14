@@ -19,11 +19,17 @@ package manager
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/Project-HAMi/ascend-device-plugin/internal"
 	"huawei.com/npu-exporter/v6/devmanager"
 	"huawei.com/npu-exporter/v6/devmanager/dcmi"
 	"k8s.io/klog/v2"
+)
+
+const (
+	hamiResourcePrefix    = "huawei.com"
+	volcanoResourcePrefix = "volcano.sh"
 )
 
 type Device struct {
@@ -55,7 +61,7 @@ func NewAscendManager() (*AscendManager, error) {
 	}, nil
 }
 
-func (am *AscendManager) LoadConfig(path string) error {
+func (am *AscendManager) LoadConfig(path string, isHAMIMode bool) error {
 	config, err := internal.LoadConfig(path)
 	if err != nil {
 		return err
@@ -76,6 +82,12 @@ func (am *AscendManager) LoadConfig(path string) error {
 	}
 	if idx == -1 {
 		return fmt.Errorf("can not find vnpu config for chip %s", chipInfo.Name)
+	}
+	if !isHAMIMode {
+		config.VNPUs[idx].ResourceName =
+			strings.ReplaceAll(config.VNPUs[idx].ResourceName, hamiResourcePrefix, volcanoResourcePrefix)
+		config.VNPUs[idx].ResourceMemoryName =
+			strings.ReplaceAll(config.VNPUs[idx].ResourceName, hamiResourcePrefix, volcanoResourcePrefix)
 	}
 	am.config = config.VNPUs[idx]
 	sort.Slice(am.config.Templates, func(i, j int) bool {
