@@ -115,6 +115,11 @@ func main() {
 	klog.InitFlags(nil)
 	flag.Parse()
 	checkFlags()
+	mode := "hami"
+	if !*isHAMIMode {
+		mode = "volcano"
+	}
+	klog.Infof("run %s mode", mode)
 	klog.Infof("version: %s", version.GetVersion())
 	klog.Infof("using config file: %s", *configFile)
 	config := &hwlog.LogConfig{
