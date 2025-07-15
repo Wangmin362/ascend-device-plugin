@@ -67,7 +67,6 @@ func NewPluginServer(mgr *manager.AscendManager, nodeName string, isHAMIMode boo
 		registerAnno = fmt.Sprintf("volcano.sh/node-register-%s", mgr.CommonWord())
 		handshakeAnno = fmt.Sprintf("volcano.sh/node-handshake-%s", mgr.CommonWord())
 		allocAnno = fmt.Sprintf("volcano.sh/node-alloc-%s", mgr.CommonWord())
-		NodeLockAscend = fmt.Sprintf("volcano.sh/ascend.mutex.lock")
 	}
 	return &PluginServer{
 		nodeName:      nodeName,
