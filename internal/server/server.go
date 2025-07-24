@@ -57,6 +57,7 @@ type PluginServer struct {
 	socket        string
 	stopCh        chan interface{}
 	healthCh      chan int32
+	isHAMIMode    bool
 }
 
 func NewPluginServer(mgr *manager.AscendManager, nodeName string, isHAMIMode bool) (*PluginServer, error) {
@@ -78,6 +79,7 @@ func NewPluginServer(mgr *manager.AscendManager, nodeName string, isHAMIMode boo
 		socket:        path.Join(v1beta1.DevicePluginPath, fmt.Sprintf("%s.sock", mgr.CommonWord())),
 		stopCh:        make(chan interface{}),
 		healthCh:      make(chan int32),
+		isHAMIMode:    isHAMIMode,
 	}, nil
 }
 
@@ -328,7 +330,13 @@ func (ps *PluginServer) GetPreferredAllocation(context.Context, *v1beta1.Preferr
 
 func (ps *PluginServer) Allocate(ctx context.Context, reqs *v1beta1.AllocateRequest) (*v1beta1.AllocateResponse, error) {
 	klog.V(5).Infof("Allocate: %v", reqs)
-	pod, err := util.GetPendingPod(ctx, ps.nodeName)
+	var pod *v1.Pod
+	var err error
+	if ps.isHAMIMode {
+		pod, err = util.GetPendingPod(ctx, ps.nodeName)
+	} else {
+		pod, err = GetPendingPod(ps.nodeName)
+	}
 	if err != nil {
 		klog.Errorf("get pending pod error: %v", err)
 		lockerr := nodelock.ReleaseNodeLock(ps.nodeName, NodeLockAscend, pod, false)
