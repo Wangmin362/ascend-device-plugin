@@ -14,7 +14,11 @@ import (
 )
 
 const (
-	PodAnnotationMaxLength = 1024 * 1024
+	PodAnnotationMaxLength  = 1024 * 1024
+	AssignedTimeAnnotations = "volcano.sh/ascend-vgpu-time"
+	AssignedNodeAnnotations = "volcano.sh/ascend-vgpu-node"
+	BindTimeAnnotations     = "volcano.sh/ascend-bind-time"
+	DeviceBindPhase         = "volcano.sh/ascend-bind-phase"
 )
 
 func GetPendingPod(node string) (*v1.Pod, error) {
@@ -37,16 +41,16 @@ func getOldestPod(pods []v1.Pod, nodename string) *v1.Pod {
 	}
 	oldest := pods[0]
 	for _, pod := range pods {
-		if pod.Annotations[util.AssignedNodeAnnotations] == nodename {
-			klog.V(4).Infof("pod %s, predicate time: %s", pod.Name, pod.Annotations[util.AssignedTimeAnnotations])
+		if pod.Annotations[AssignedNodeAnnotations] == nodename {
+			klog.V(4).Infof("pod %s, predicate time: %s", pod.Name, pod.Annotations[AssignedTimeAnnotations])
 			if getPredicateTimeFromPodAnnotation(&oldest) > getPredicateTimeFromPodAnnotation(&pod) {
 				oldest = pod
 			}
 		}
 	}
 	klog.V(4).Infof("oldest pod %#v, predicate time: %#v", oldest.Name,
-		oldest.Annotations[util.AssignedTimeAnnotations])
-	annotation := map[string]string{util.AssignedTimeAnnotations: strconv.FormatUint(math.MaxUint64, 10)}
+		oldest.Annotations[AssignedTimeAnnotations])
+	annotation := map[string]string{AssignedTimeAnnotations: strconv.FormatUint(math.MaxUint64, 10)}
 	if err := util.PatchPodAnnotations(&oldest, annotation); err != nil {
 		klog.Errorf("update pod %s failed, err: %v", oldest.Name, err)
 		return nil
@@ -55,7 +59,7 @@ func getOldestPod(pods []v1.Pod, nodename string) *v1.Pod {
 }
 
 func getPredicateTimeFromPodAnnotation(pod *v1.Pod) uint64 {
-	assumeTimeStr, ok := pod.Annotations[util.AssignedTimeAnnotations]
+	assumeTimeStr, ok := pod.Annotations[AssignedTimeAnnotations]
 	if !ok {
 		klog.Warningf("volcano not write timestamp, pod Name: %s", pod.Name)
 		return math.MaxUint64
